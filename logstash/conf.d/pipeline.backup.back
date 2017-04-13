@@ -1,0 +1,128 @@
+# The # character at the beginning of a line indicates a comment. Use
+# comments to describe your configuration.
+input {
+	file {
+		path => "/var/data/CrimeReport1.csv"
+			start_position => "beginning"
+			sincedb_path => "/dev/null"
+			type => "report1"
+	}
+
+	file {
+		path => "/var/data/CrimeReport2.csv"
+			start_position => "beginning"
+			sincedb_path => "/dev/null"
+			type => "report2"
+	}
+
+}
+# The filter part of this file is commented out to indicate that it is
+# optional.
+filter {
+	if [type] == "report1" {
+		csv {
+			columns => [
+				"INCIDENT NUMBER",
+				"NatureCode",
+				"INCIDENT DESCRIPTION",
+				"MAIN_CRIMECODE",
+				"DISTRICT",
+				"REPORTING AREA",
+				"DATE",
+				"WEAPONTYPE",
+				"SHOOTING",
+				"DOMESTIC",
+				"SHIFT",
+				"YEAR",
+				"MONTH",
+				"DAY OF WEEK",
+				"UCR PART",
+				"X",
+				"Y",
+				"STREET",
+				"XSTREETNAME",
+				"Location"
+					]
+			separator => ","
+		}
+		
+		mutate {
+			convert => { "DOMESTIC" => "boolean" }
+		}
+
+		grok {
+                	match => { "Location" => "%{BASE16FLOAT:LAT},(?<sign>[^,]*)%{BASE16FLOAT:long2}" }
+        	}
+
+		mutate {
+                	add_field => { "LONG" => "%{sign}%{long2}" }
+        	}
+
+		mutate {
+    			remove_field => [ "long2" ]
+  		}
+
+	}
+	else if [type] == "report2" {
+		csv {
+			columns => [
+				"INCIDENT NUMBER",
+				"OFFENSE CODE",
+				"OFFENSE CODE GROUP",
+				"INCIDENT DESCRIPTION",
+				"DISTRICT",
+				"REPORTING AREA",
+				"SHOOTING",
+				"DATE",
+				"Hour",
+				"YEAR",
+				"MONTH",
+				"DAY OF WEEK",
+				"UCR PART",
+				"STREET",
+				"LAT",
+				"LONG",
+				"Location"
+			]
+			separator => ","
+		}
+
+		if [SHOOTING] == "Y" {
+			mutate {
+  				replace => [ "SHOOTING", "yes" ]
+  			}
+		}
+		else {
+			mutate {
+				replace => [ "SHOOTING", "no" ]
+			}
+		}
+		
+	}
+
+	date {
+		match => ["DATE", "MM/dd/yyyy HH:mm:ss a"]
+	}
+
+	mutate {
+		convert => {
+				"SHOOTING"	=> 	"boolean"
+				"X"		=> 	"float"
+				"Y"		=> 	"float"
+				"LAT"   	=>      "float"
+                                "LONG"  	=>      "float"
+		}
+	}
+
+	mutate {
+		add_field => { "coordinates" => "%{LAT},%{LONG}" }
+	}
+}
+
+output {
+	stdout {}
+	elasticsearch {
+		hosts => "http://localhost:9200"
+		index => "boston_crime_data"
+	}
+}
